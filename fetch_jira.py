@@ -3,47 +3,50 @@ import json
 import os
 from requests.auth import HTTPBasicAuth
 
-# These variables will be pulled from GitHub Secrets
 EMAIL = os.getenv('JIRA_USER_EMAIL')
 TOKEN = os.getenv('JIRA_API_TOKEN')
 BASE_URL = os.getenv('JIRA_BASE_URL')
 
 def fetch_incidents():
-    # JQL: Finds all issues in your project of type 'Incident'
-    # Change 'project = "YOUR_PROJECT_KEY"' to your actual project key
-    jql_query = 'issuetype = "Incident" ORDER BY created DESC'
-    
+    # Attempt to fetch incidents
     url = f"{BASE_URL}/rest/api/3/search"
-    
     auth = HTTPBasicAuth(EMAIL, TOKEN)
+    headers = {"Accept": "application/json"}
     
-    headers = {
-        "Accept": "application/json"
-    }
-
+    # Updated JQL: Fetches issues of type 'Incident'
     query = {
-        'jql': jql_query,
-        'maxResults': 50,
+        'jql': 'issuetype = "Incident" ORDER BY created DESC',
         'fields': ['summary', 'status', 'priority', 'created', 'updated']
     }
 
-    response = requests.request(
-        "GET",
-        url,
-        headers=headers,
-        params=query,
-        auth=auth
-    )
+    try:
+        print(f"Connecting to {BASE_URL}...")
+        response = requests.request("GET", url, headers=headers, params=query, auth=auth)
+        
+        # Check if the API call was successful
+        if response.status_code == 200:
+            data = response.json()
+            issues = data.get('issues', [])
+            
+            # ALWAYS write the file, even if issues is an empty list []
+            with open('incidents.json', 'w') as f:
+                json.dump(issues, f, indent=4)
+            
+            print(f"Success! Found {len(issues)} incidents. 'incidents.json' updated.")
+            
+        else:
+            print(f"Jira API Error: {response.status_code}")
+            print(f"Details: {response.text}")
+            # Optional: Create an empty file so the Git command doesn't fail
+            with open('incidents.json', 'w') as f:
+                json.dump([], f)
 
-    if response.status_code == 200:
-        data = response.json()
-        # Save results to a file that the frontend will read
-        with open('incidents.json', 'w') as f:
-            json.dump(data['issues'], f, indent=4)
-        print("Successfully updated incidents.json")
-    else:
-        print(f"Error: {response.status_code}")
-        print(response.text)
+    except Exception as e:
+        print(f"Script failed with error: {e}")
+        # Ensure the file exists to satisfy the GitHub Action commit step
+        if not os.path.exists('incidents.json'):
+            with open('incidents.json', 'w') as f:
+                json.dump([], f)
 
 if __name__ == "__main__":
     fetch_incidents()
